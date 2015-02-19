@@ -27,6 +27,9 @@ using System;
  * This script should be attached to the Canvas GameObject in the Scene.
  * 
  */
+using System.IO;
+
+
 public class AutoSave : MonoBehaviour {
 
 	// Public variables that should be assigned via the inspector.
@@ -50,6 +53,12 @@ public class AutoSave : MonoBehaviour {
 	// It can be any valid filename.
 	private string autoSaveFileName = "AutoSave";
 
+	// time since last auto save
+	private float mTimeSinceLastSave;
+	private bool mModified;
+
+	// the interval for auto saving
+	private float mAutoSaveInterval = 30f;
 
 	// these are variables persisted in the saved game data.
 	private float mSavedValue = 0;
@@ -72,6 +81,9 @@ public class AutoSave : MonoBehaviour {
 
 	// Use this for initialization
 	void Start () {
+
+		// start with unmodified data.
+		mModified = false;
 
 		//This is the callback that is called when signing in.
 		mAuthCallback = (bool success) => {
@@ -122,15 +134,27 @@ public class AutoSave : MonoBehaviour {
 	// Update is called once per frame
 	void Update () {
 
+		mTimeSinceLastSave += Time.deltaTime;
+
 		// Update the status text
 		string status;
 		if (Social.localUser.authenticated) {
 			status = "Authenticated ";
+			// need to be authenticated to do auto save.
+			if (mTimeSinceLastSave > mAutoSaveInterval) {
+				// only save if modified.
+				if (mModified) {
+					AutoSaveData();
+				}
+				mTimeSinceLastSave = 0f;
+      		}
 		}
 		else {
 			status = "Not Authenticated";
 		}
 		mStatus.GetComponent<Text>().text = status + " " + mMsg;
+
+
 	}
 
 	// This is a helper method used to create an image that is part of the 
@@ -145,6 +169,11 @@ public class AutoSave : MonoBehaviour {
 	// Called to Save the data - linked to the OnClick event for the Save button in the UI.
 	public void OnSave() {
 		SaveData();
+		UpdateDisplay();
+	}
+
+	public void OnLoad() {
+		LoadData();
 		UpdateDisplay();
 	}
 
@@ -167,13 +196,15 @@ public class AutoSave : MonoBehaviour {
 	public void OnFloatChanged(string value) {
 		if (value.Length > 0){
 			mSavedValue = System.Convert.ToSingle(value);
-		}
+			mModified = true;
+    	}
 	}
 
 	// Called to change the string value of our application.  It is linked to OnEndEdit event for the
 	// string input edit.
 	public void OnStringChanged(string value) {
 		mSavedMessage = value;
+		mModified = true;
 	}
 
 	// Called to change the int value of our application.  It is linked to the OnEndEdit event for the 
@@ -181,7 +212,8 @@ public class AutoSave : MonoBehaviour {
 	public void OnIntChanged(string value) {
 		if (value.Length > 0) {
 			mSavedCounter = System.Convert.ToUInt16(value);
-		}
+			mModified = true;
+    	}
 	}
 
 	// Update the edit fields.
@@ -192,8 +224,26 @@ public class AutoSave : MonoBehaviour {
 		mIntText.text = mSavedCounter.ToString();
 	}
 
-	// Starts the save Data process.  Call this to start saving. 
+	void LoadData() {
+		((PlayGamesPlatform)Social.Active).SavedGame.ShowSelectSavedGameUI("Select Saved Game to Load",
+		                                                                   10,
+		                                                                   false,
+		                                                                   true,
+		                                                                   SaveGameSelectedForRead);
+  	}
+
 	void SaveData() {
+		((PlayGamesPlatform)Social.Active).SavedGame.ShowSelectSavedGameUI("Save Game Progress",
+		                                                                   10,
+		                                                                   true,
+		                                                                   false,
+		                                                                   SaveGameSelectedForWrite);
+    
+    
+  }
+
+	// Starts the save Data process.  Call this to start saving. 
+	void AutoSaveData() {
 		// grab the frame.
 		CaptureScreenshot();
 		//save to the autosave file name.
@@ -230,11 +280,20 @@ public class AutoSave : MonoBehaviour {
 			// Update the total playing time.
 			TimeSpan playedTime = mTotalPlayingTime.Add(DateTime.Now.Subtract(mStartTime));
 
+			string description;
+
+			if (game.Filename.Equals(autoSaveFileName)) {
+				description = "Autosaved game at " + DateTime.Now;
+			}
+			else {
+				description = "Saved Game at " + DateTime.Now;
+			}
+
 			// Build the metadata
 			SavedGameMetadataUpdate.Builder builder =  new 
 				SavedGameMetadataUpdate.Builder()
 					.WithUpdatedPlayedTime(playedTime)
-					.WithUpdatedDescription("Saved Game at " + DateTime.Now);
+					.WithUpdatedDescription(description);
 			
 			if (pngData != null) {
 				Debug.Log("Save image of len " + pngData.Length);
@@ -248,9 +307,49 @@ public class AutoSave : MonoBehaviour {
 			// Finally commit the data and metadata to the saved game.
 			((PlayGamesPlatform)Social.Active).SavedGame.CommitUpdate(game,updatedMetadata,data,SavedGameWritten);
 		} else {
-			mMsg = "Error opening game: " + status;
+			mMsg = "Error opening game: " + status + " filename = " + game.Filename;
 			Debug.LogWarning(mMsg);
 		}
+	}
+
+	public void SaveGameSelectedForWrite(SelectUIStatus status, ISavedGameMetadata game) {
+		if(status == SelectUIStatus.SavedGameSelected) {
+			string newFilename;
+			mMsg = "Selected Game to save";
+			Debug.Log (mMsg);
+			if (game.Filename == null || game.Filename.Length == 0) {
+
+				newFilename = "UserSaved_" + DateTime.Now.ToBinary();
+			}
+			else {
+				newFilename = game.Filename;
+			}
+			((PlayGamesPlatform)Social.Active).SavedGame.OpenWithAutomaticConflictResolution(newFilename,
+			                                                                                 DataSource.ReadCacheOrNetwork,
+			                                                                                 ConflictResolutionStrategy.UseLongestPlaytime,
+			                                                                                 SavedGameOpenedForWrite);
+		}
+		else {
+			mMsg = "Selection failed: " + status;
+			Debug.LogWarning(mMsg);
+    }
+    
+  }
+  
+  public void SaveGameSelectedForRead(SelectUIStatus status, ISavedGameMetadata game) {
+		if(status == SelectUIStatus.SavedGameSelected) {
+			mMsg = "Selected Game to load";
+			Debug.Log (mMsg);
+			((PlayGamesPlatform)Social.Active).SavedGame.OpenWithAutomaticConflictResolution(game.Filename,
+			                                                                                 DataSource.ReadCacheOrNetwork,
+			                                                                                 ConflictResolutionStrategy.UseLongestPlaytime,
+			                                                                                 SavedGameOpenedForRead);
+		}
+		else {
+			mMsg = "Selection failed: " + status;
+			Debug.LogWarning(mMsg);
+		}
+      
 	}
 
 	// Callback called by GPG when the file is opened.
@@ -296,18 +395,22 @@ public class AutoSave : MonoBehaviour {
 	}
 
 	// Good practice to version the serialized data so if we change it, we can be backwards compatible.
-	const string VERSION = "V1";
+	const string VERSION_MARKER = "V1";
 
 	// delimiter - expected not to be in the actual saved data.
 	const char DELIMITER = '|';
 
 	// Converts our values we want to save into a byte array.
-	// This is a simple process that makes a string first, then the bytes, but any serialization method
-	// is OK.  String is used here just for simplicity.
 	byte[] WriteValuesToBytes() {
 
-		string data = VERSION + DELIMITER + mSavedValue + DELIMITER + mSavedMessage + DELIMITER + mSavedCounter;
-		return System.Text.ASCIIEncoding.Default.GetBytes(data);
+		MemoryStream ms = new MemoryStream();
+		BinaryWriter writer = new BinaryWriter(ms);
+		writer.Write(VERSION_MARKER);
+		writer.Write(mSavedValue);
+		writer.Write(mSavedMessage);
+		writer.Write(mSavedCounter);
+		writer.Flush();
+		return ms.ToArray();
 	}
 
 	// Converts the byte array into our saved values.  This reading has to match the WriteValuesToBytes() 
@@ -319,20 +422,21 @@ public class AutoSave : MonoBehaviour {
 
 		}
 		else {
-		string myString = System.Text.ASCIIEncoding.Default.GetString(data);
-		string[] parts = myString.Split('|');
-		if (parts[0].StartsWith("V1")) {
-			// this is version one serialization.
-			mSavedValue = System.Convert.ToSingle(parts[1]);
-			mSavedMessage = parts[2];
-			mSavedCounter = System.Convert.ToInt32(parts[3]);
-			mMsg = "Loaded Saved Data";
+			MemoryStream ms = new MemoryStream(data);
+			BinaryReader reader = new BinaryReader(ms);
+			string version = reader.ReadString();
+			if (version.Equals(VERSION_MARKER)) {
+				// this is version one serialization.
+				mSavedValue = reader.ReadSingle();
+				mSavedMessage = reader.ReadString();
+				mSavedCounter = reader.ReadInt32();
+				mMsg = "Loaded Saved Data";
 			
-		}
-		else {
-			mMsg = "Unknown serialization version: " + parts[0];
-			Debug.LogError(mMsg);
-		}
+			}
+			else {
+				mMsg = "Unknown serialization version: " + version;
+				Debug.LogError(mMsg);
+			}
 		}
 		UpdateDisplay();
 		mStartTime = DateTime.Now;
