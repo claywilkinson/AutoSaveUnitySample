@@ -3,8 +3,6 @@ Shows how to have a simple auto save functionality in Unity with Google Play Gam
 
 For complete documentation see: https://github.com/playgameservices/play-games-plugin-for-unity
 
-PLEASE post questions there vs. my repository - oddly, not many people look at this repo :).
-
 There are a lot of steps and callbacks in order to save data using the Saved Games API and Unity, so I made a 
 simple example that is super simple to demonstrate saving and loading a couple fields.
 
@@ -17,7 +15,7 @@ Change the values, and then click save.  This saves the data (ok - not exactly a
 
 Exit the game, or start on another device - the game data will be there.
 
-Setup the game on the Play console before running this application, the saved game system caches information on the 
+**Setup the game on the Play console before running this application**, the saved game system caches information on the 
 device, and if you run the game before enabling saved games, you either need to wait 24 hours, or clear the Play Services Data on the device.  This is a pain - and Google is working on improving that.
 
 Here are the steps I took to run this app successfully on both Android and iOS 7.0
@@ -45,7 +43,9 @@ To Configure the game:
 11. copy the client id.  
        - NOTE: for android you only need the number part.
 
-Go to Unity.
+
+Now, Go to Unity
+
 1. Import the Google Play Game Services plugin.
 2.  Click Google Play Games/Android Setup.
 3. enter the client id for the application id.
